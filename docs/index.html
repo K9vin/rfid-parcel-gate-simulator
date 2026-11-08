@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RFID Parcel Gate Simulator</title>
+<style>
+:root{--bg:#f2f0ea;--fg:#1c2226;--mut:#5b656b;--card:#fff;--line:#d5d1c6;--acc:#0b6e69;--ok:#15803d;--bad:#b91c1c;--lane:#e4e0d4;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#13181b;--fg:#e8ecee;--mut:#9aa5ab;--card:#1b2226;--line:#33403f;--acc:#3cc6bd;--ok:#4ade80;--bad:#f87171;--lane:#232c2f}}
+:root[data-theme="dark"]{--bg:#13181b;--fg:#e8ecee;--mut:#9aa5ab;--card:#1b2226;--line:#33403f;--acc:#3cc6bd;--ok:#4ade80;--bad:#f87171;--lane:#232c2f}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}h2{font-size:16px;margin:0 0 8px}
+p.sub{margin:0 0 16px;color:var(--mut);max-width:70ch}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:14px}
+canvas{width:100%;height:auto;display:block;border-radius:4px}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;align-items:end}
+label{display:block;font-size:13px;color:var(--mut)}label b{color:var(--fg);font-weight:600}
+select,input[type=range]{width:100%;margin-top:4px}select{padding:6px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:4px}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+button{font:inherit;padding:8px 14px;border-radius:4px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer}
+button.s{background:transparent;color:var(--acc)}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stat{border-left:3px solid var(--acc);padding-left:10px}.stat span{display:block;font-size:12px;color:var(--mut)}.stat strong{font-size:22px}
+.wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+pre{white-space:pre-wrap;font-size:12px;background:var(--lane);padding:10px;border-radius:4px;margin:10px 0 0}
+small{color:var(--mut)}
+</style></head><body><main>
+<h1>RFID parcel gate simulator</h1>
+<p class="sub">A simulated courier gate. Each parcel carries a passive RFID tag and passes a reader at the centre of the lane. Parcels moving right are entering (IN); parcels moving left are leaving (OUT). Change the settings and see how many tags the reader captures.</p>
+
+<div class="card"><canvas id="cv" width="900" height="190" aria-label="Animated RFID gate: parcels passing a reader"></canvas></div>
+
+<div class="card"><div class="ctl">
+<label>Tag / reader type<select id="tag"><option value="uhf">UHF passive (860–960 MHz), 1.5 m zone</option><option value="hf">HF passive (13.56 MHz), 0.3 m zone</option></select></label>
+<label>Parcel speed: <b id="vv">1.0</b> m/s<input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"></label>
+<label>Interference (metal, liquids, crowding): <b id="iv">20</b>%<input id="int" type="range" min="0" max="90" step="5" value="20"></label>
+</div>
+<div class="btns"><button id="go">Start live gate</button><button class="s" id="bt">Run batch of 100 parcels</button><button class="s" id="rs">Reset</button></div></div>
+
+<div class="card"><h2>Live results</h2><div class="stats">
+<div class="stat"><span>Parcels passed</span><strong id="sE">0</strong></div>
+<div class="stat"><span>Tags read</span><strong id="sR">0</strong></div>
+<div class="stat"><span>Missed</span><strong id="sM">0</strong></div>
+<div class="stat"><span>Read rate</span><strong id="sP">–</strong></div>
+<div class="stat"><span>Actually inside</span><strong id="sA">0</strong></div>
+<div class="stat"><span>System thinks inside</span><strong id="sS">0</strong></div></div>
+<div class="wrap"><table><thead><tr><th>Time</th><th>Parcel</th><th>Tag ID</th><th>Direction</th><th>Reads needed</th><th>Result</th></tr></thead><tbody id="lg"><tr><td colspan="6"><small>Start the live gate to see scans appear here.</small></td></tr></tbody></table></div></div>
+
+<div class="card"><h2>Experiment record</h2>
+<p class="sub">Each batch run adds a row. Try several settings, then copy the table into your report.</p>
+<div class="wrap"><table><thead><tr><th>Run</th><th>Tag</th><th>Speed (m/s)</th><th>Interference</th><th>Parcels</th><th>Read</th><th>Missed</th><th>Read rate</th></tr></thead><tbody id="ex"><tr><td colspan="8"><small>No batch runs yet.</small></td></tr></tbody></table></div>
+<div class="btns"><button class="s" id="cp">Show table as text</button></div><pre id="out" hidden></pre></div>
+
+<div class="card"><h2>How the simulation works</h2>
+<p class="sub">While a tag is inside the reader's zone, the reader tries to read it several times. The number of tries is (reads per second × zone length ÷ speed), at least one. Each try succeeds with a probability that falls as interference rises (UHF is more affected by metal and liquids than HF). A parcel is captured if any try succeeds. Faster parcels and higher interference give fewer tries and lower success, and HF has a much shorter range than UHF. The numbers are model assumptions for a classroom simulation, not measurements from real hardware.</p>
+<p class="sub">Assumed values. UHF: 25 reads/s, 10% success per try. HF: 10 reads/s, 55% success per try.</p></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const T={uhf:{n:'UHF',zone:1.5,rate:25,p:.10,sens:.85},hf:{n:'HF',zone:.3,rate:10,p:.55,sens:.35}};
+const cfg=()=>({tag:$('tag').value,v:+$('spd').value,i:+$('int').value/100});
+function resolve(c){const t=T[c.tag],n=Math.max(1,Math.round(t.rate*t.zone/c.v)),p=t.p*(1-c.i*t.sens);
+for(let k=0;k<n;k++)if(Math.random()<p)return{ok:true,n};return{ok:false,n}}
+let P=[],run=false,last=0,acc=0,seq=0,flash=0,flashOk=true,S,runs=0,rows=[];
+function zero(){S={e:0,r:0,m:0,ins:0,outs:0,sys:0}}zero();
+const cv=$('cv'),g=cv.getContext('2d'),css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#888';
+const X=x=>50+x*80;
+function spawn(){const dir=Math.random()<.6?1:-1,c=cfg();P.push({id:++seq,epc:'E280-'+(1000+Math.floor(Math.random()*9000)),dir,x:dir>0?0:10,c,res:null})}
+function finish(p){p.res=resolve(p.c);S.e++;const dir=p.dir;
+if(dir>0)S.ins++;else S.outs++;
+if(p.res.ok){S.r++;S.sys+=dir>0?1:-1}else S.m++;
+flash=.35;flashOk=p.res.ok;addLog(p)}
+function addLog(p){const b=$('lg');if(b.children[0]&&b.children[0].children.length==1)b.innerHTML='';
+const r=document.createElement('tr'),d=new Date().toLocaleTimeString();
+r.innerHTML=`<td>${d}</td><td>#${p.id}</td><td>${p.res.ok?p.epc:'(unread)'}</td><td>${p.dir>0?'IN':'OUT'}</td><td>${p.res.n}</td><td class="${p.res.ok?'ok':'bad'}">${p.res.ok?'Read':'Missed'}</td>`;
+b.prepend(r);while(b.children.length>10)b.lastChild.remove()}
+function stats(){$('sE').textContent=S.e;$('sR').textContent=S.r;$('sM').textContent=S.m;
+$('sP').textContent=S.e?Math.round(100*S.r/S.e)+'%':'–';$('sA').textContent=S.ins-S.outs;$('sS').textContent=S.sys}
+function draw(){const W=900,H=190,ok=css('--ok'),bad=css('--bad'),acc=css('--acc'),fg=css('--fg');
+g.clearRect(0,0,W,H);g.fillStyle=css('--lane');g.fillRect(30,80,840,50);
+g.fillStyle=css('--mut');g.font='13px system-ui';g.fillText('OUT ←',36,152);g.fillText('→ IN',810,152);
+const z=T[$('tag').value].zone;g.fillStyle=acc+'33';g.fillRect(X(5-z/2),40,z*80,130);
+g.strokeStyle=flash>0?(flashOk?ok:bad):acc;g.lineWidth=5;g.strokeRect(X(5)-14,30,28,150);
+g.fillStyle=fg;g.fillText('Reader',X(5)-20,20);
+for(const p of P){const x=X(p.x),z2=T[p.c.tag].zone,passed=p.res;
+g.fillStyle=passed?(p.res.ok?ok:bad):'#c98a3d';g.fillRect(x-16,90,32,30);
+g.fillStyle='#fff';g.fillRect(x-4,100,8,8)}}
+function frame(t){const dt=Math.min(.05,(t-last)/1000||0);last=t;
+if(run){acc+=dt;const v=cfg().v;if(acc>Math.max(.4,1/v)){acc=0;spawn()}
+for(const p of P){p.x+=p.dir*p.c.v*dt;const zh=T[p.c.tag].zone/2;
+if(!p.res&&(p.dir>0?p.x>5+zh:p.x<5-zh))finish(p)}
+P=P.filter(p=>p.x>-.5&&p.x<10.5);stats()}
+if(flash>0)flash-=dt;draw();requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+$('go').onclick=()=>{run=!run;$('go').textContent=run?'Pause live gate':'Start live gate'};
+$('rs').onclick=()=>{P=[];zero();seq=0;$('lg').innerHTML='<tr><td colspan="6"><small>Start the live gate to see scans appear here.</small></td></tr>';stats()};
+$('spd').oninput=e=>$('vv').textContent=(+e.target.value).toFixed(1);
+$('int').oninput=e=>$('iv').textContent=e.target.value;
+$('bt').onclick=()=>{const c=cfg();let ok=0;for(let k=0;k<100;k++)if(resolve(c).ok)ok++;
+runs++;rows.push([runs,T[c.tag].n,c.v.toFixed(1),Math.round(c.i*100)+'%',100,ok,100-ok,ok+'%']);
+const b=$('ex');if(runs==1)b.innerHTML='';
+const r=document.createElement('tr');r.innerHTML=rows[rows.length-1].map(v=>`<td>${v}</td>`).join('');b.appendChild(r)};
+$('cp').onclick=()=>{const o=$('out');const txt='Run | Tag | Speed (m/s) | Interference | Parcels | Read | Missed | Read rate\n'+rows.map(r=>r.join(' | ')).join('\n');
+o.textContent=rows.length?txt:'Run at least one batch first.';o.hidden=false;
+try{navigator.clipboard.writeText(txt)}catch(e){}};
+</script></body></html>
